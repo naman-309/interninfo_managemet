@@ -1,7 +1,8 @@
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'; // Upar import list me add karein
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../config/db.js';
-import { registerSchema } from './auth.validation.js';
+import { registerSchema, forgotPasswordSchema, resetPasswordSchema } from './auth.validation.js';
 import { loginSchema } from './auth.validation.js';
 
 export const registerStudent = async (req, res) => {
@@ -125,5 +126,98 @@ export const loginUser = async (req, res) => {
             return res.status(400).json({ success: false, error: error.errors[0].message });
         }
         return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+};
+
+
+// 3. Forgot Password Request
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = forgotPasswordSchema.parse(req.body);
+        const user = await prisma.user.findUnique({ where: { email } });
+
+        // Security Rule: Hamesha same message bhejo
+        const successMessage = 'If that email is registered, we have sent a password reset link.';
+
+        if (!user) {
+            return res.status(200).json({ success: true, message: successMessage });
+        }
+
+        // A. Generate a secure random token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+
+        // B. Create a hash of this token to save in DB (Security)
+        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+        // C. Token will expire in 15 minutes
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+        // D. Transaction: Save token AND outbox event
+        await prisma.$transaction(async (tx) => {
+            await tx.passwordResetToken.create({
+                data: {
+                    userId: user.id,
+                    tokenHash: tokenHash,
+                    expiresAt: expiresAt
+                }
+            });
+
+            // Notification outbox me event daal diya email bhejne ke liye
+            await tx.notificationOutbox.create({
+                data: {
+                    eventType: 'PASSWORD_RESET_REQUESTED',
+                    payload: {
+                        studentName: user.name,
+                        studentEmail: user.email,
+                        resetToken: resetToken // Actual token email me jayega
+                    }
+                }
+            });
+        });
+
+        return res.status(200).json({ success: true, message: successMessage });
+    } catch (error) {
+        if (error.errors) return res.status(400).json({ success: false, error: error.errors[0].message });
+        return res.status(500).json({ success: false, error: 'Request failed.' });
+    }
+};
+
+// 4. Reset Password Logic
+export const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = resetPasswordSchema.parse(req.body);
+
+        // A. Hash the incoming token to search in DB
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+        const resetRecord = await prisma.passwordResetToken.findUnique({
+            where: { tokenHash: tokenHash }
+        });
+
+        // B. Verify Token: Check if it exists, is not used, and is not expired
+        if (!resetRecord || resetRecord.usedAt || resetRecord.expiresAt < new Date()) {
+            return res.status(400).json({ success: false, error: 'Invalid or expired reset token.' });
+        }
+
+        // C. Hash the new password
+        const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+        // D. Transaction: Update password AND mark token as used
+        await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: resetRecord.userId },
+                data: { passwordHash: newPasswordHash }
+            });
+
+            await tx.passwordResetToken.update({
+                where: { id: resetRecord.id },
+                data: { usedAt: new Date() }
+            });
+        });
+
+        return res.status(200).json({ success: true, message: 'Password updated successfully. You can now login.' });
+    } catch (error) {
+        if (error.errors) return res.status(400).json({ success: false, error: error.errors[0].message });
+        return res.status(500).json({ success: false, error: 'Password reset failed.' });
     }
 };

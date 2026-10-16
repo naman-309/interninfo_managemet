@@ -14,3 +14,4 @@ export const bulkResultsSchema = z.object({
         attendanceStatus: z.enum(['PRESENT', 'ABSENT'])
     }))
 });
+

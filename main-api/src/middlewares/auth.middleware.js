@@ -27,3 +27,15 @@ export const requireAdmin = (req, res, next) => {
     }
     next();
 };
+
+// Guard 3: Check if student is APPROVED (Un-approved students cannot see dashboard)
+export const requireApproved = (req, res, next) => {
+    // Check if role is USER and status is APPROVED
+    if (req.user.role === 'USER' && req.user.status !== 'APPROVED') {
+        return res.status(403).json({
+            success: false,
+            error: 'Your account is still pending approval from the Admin.'
+        });
+    }
+    next();
+};

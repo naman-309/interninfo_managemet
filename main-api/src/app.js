@@ -6,8 +6,10 @@ import authRoutes from './modules/auth/auth.routes.js';
 import mockTestRoutes from './modules/mock-tests/mockTest.routes.js'; // Import karo
 //admin 
 import adminRoutes from './modules/admin/admin.routes.js'; // Upar import karein
-//fees 
+//fees admin
 import feeRoutes from './modules/fees/fee.routes.js';
+// student  dash bord 
+import studentRoutes from './modules/students/student.routes.js';
 const app = express();
 
 app.use(helmet());
@@ -34,4 +36,9 @@ app.use('/api/admin', adminRoutes);
 //handel  fees admin 
 app.use('/api/admin', feeRoutes);
 app.use('/api/admin/tests', mockTestRoutes);
+
+// student api 
+app.use('/api/student', studentRoutes);
 export default app;
+
+

@@ -1,17 +1,15 @@
 import { Router } from 'express';
-import { registerStudent, loginUser } from './auth.controller.js';
+import { registerStudent, loginUser, forgotPassword, resetPassword } from './auth.controller.js'; // Functions import kiye
 import { getActiveCourses } from '../students/course.controller.js';
 
 const router = Router();
 
-// Public  courses
 router.get('/courses', getActiveCourses);
 
-// register api 
+// basic api 
 router.post('/register', registerStudent);
-
-//login api 
 router.post('/login', loginUser);
-
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 export default router;
