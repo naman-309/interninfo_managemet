@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import authRoutes from './modules/auth/auth.routes.js';
+import mockTestRoutes from './modules/mock-tests/mockTest.routes.js'; // Import karo
 //admin 
 import adminRoutes from './modules/admin/admin.routes.js'; // Upar import karein
 //fees 
@@ -32,4 +33,5 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 //handel  fees admin 
 app.use('/api/admin', feeRoutes);
+app.use('/api/admin/tests', mockTestRoutes);
 export default app;
