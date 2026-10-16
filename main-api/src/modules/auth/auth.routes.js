@@ -1,11 +1,17 @@
 import { Router } from 'express';
-import { registerStudent } from './auth.controller.js';
+import { registerStudent, loginUser } from './auth.controller.js';
 import { getActiveCourses } from '../students/course.controller.js';
 
 const router = Router();
 
-// Public routes - auth and courses
+// Public  courses
 router.get('/courses', getActiveCourses);
+
+// register api 
 router.post('/register', registerStudent);
+
+//login api 
+router.post('/login', loginUser);
+
 
 export default router;

@@ -3,7 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import authRoutes from './modules/auth/auth.routes.js';
-
+//admin 
+import adminRoutes from './modules/admin/admin.routes.js'; // Upar import karein
+//fees 
+import feeRoutes from './modules/fees/fee.routes.js';
 const app = express();
 
 app.use(helmet());
@@ -25,4 +28,8 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 
+// admin  route 
+app.use('/api/admin', adminRoutes);
+//handel  fees admin 
+app.use('/api/admin', feeRoutes);
 export default app;

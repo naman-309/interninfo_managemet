@@ -1,6 +1,8 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken';
 import { prisma } from '../../config/db.js';
 import { registerSchema } from './auth.validation.js';
+import { loginSchema } from './auth.validation.js';
 
 export const registerStudent = async (req, res) => {
     try {
@@ -64,5 +66,64 @@ export const registerStudent = async (req, res) => {
             success: false,
             error: 'Registration failed: ' + error.message
         });
+    }
+};
+
+
+// login api 
+
+export const loginUser = async (req, res) => {
+    try {
+        const validatedData = loginSchema.parse(req.body);
+
+        // 1. Find user by email
+        const user = await prisma.user.findUnique({
+            where: { email: validatedData.email }
+        });
+
+        if (!user) {
+            return res.status(401).json({ success: false, error: 'Invalid email or password' });
+        }
+
+        // 2. Compare password using bcrypt
+        const isPasswordValid = await bcrypt.compare(validatedData.password, user.passwordHash);
+
+        if (!isPasswordValid) {
+            return res.status(401).json({ success: false, error: 'Invalid email or password' });
+        }
+
+        // 3. Create JWT Token (User ID aur Role isme save hoga)
+        const tokenPayload = {
+            userId: user.id,
+            role: user.role,
+            status: user.accountStatus
+        };
+
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+        // 4. Send token in an HTTP-only Cookie
+        res.cookie('token', token, {
+            httpOnly: true, // Frontend JS cannot access it (Secure)
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 24 * 60 * 60 * 1000 // 1 day
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            user: {
+                id: user.id,
+                name: user.name,
+                role: user.role,
+                status: user.accountStatus
+            }
+        });
+
+    } catch (error) {
+        if (error.errors) {
+            return res.status(400).json({ success: false, error: error.errors[0].message });
+        }
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };

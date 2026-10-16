@@ -9,3 +9,10 @@ export const registerSchema = z.object({
     address: z.string().trim().min(3, 'Address/City compulsory hai'),
     qualification: z.string().trim().min(2, 'College ya qualification compulsory hai')
 });
+
+
+// login validaion 
+export const loginSchema = z.object({
+    email: z.string().trim().email("Please enter a valid email address"),
+    password: z.string().min(1, "Password is required")
+});
