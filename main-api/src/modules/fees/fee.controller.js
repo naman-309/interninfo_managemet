@@ -1,16 +1,16 @@
 import { prisma } from '../../config/db.js';
 import { paymentSchema } from './fee.validation.js';
+import { redisPublisher } from '../../config/redis.js'; // 👈 IMPORT REDIS
 
 export const recordPayment = async (req, res) => {
     try {
         const enrollmentId = req.params.enrollmentId;
         const validatedData = paymentSchema.parse(req.body);
 
-        // 1. Fetch the enrollment to check the total fee and student details
         const enrollment = await prisma.enrollment.findUnique({
             where: { id: enrollmentId },
             include: {
-                payments: true, // Bring all old payments to calculate balance
+                payments: true,
                 user: { select: { name: true, email: true } },
                 course: { select: { name: true } }
             }
@@ -20,38 +20,27 @@ export const recordPayment = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Enrollment not found' });
         }
 
-        // 2. Calculate remaining balance
-        // Reduce function adds up all old payment amounts
         const totalPaid = enrollment.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
-        const totalFee = parseFloat(enrollment.totalFee);
-        const remainingBalance = totalFee - totalPaid;
+        const remainingBalance = parseFloat(enrollment.totalFee) - totalPaid;
 
-        // 3. Check if admin is entering more money than the remaining balance
         if (validatedData.amount > remainingBalance) {
-            return res.status(400).json({
-                success: false,
-                error: `Invalid amount. The remaining balance is only ₹${remainingBalance}`
-            });
+            return res.status(400).json({ success: false, error: `Invalid amount. Balance is ₹${remainingBalance}` });
         }
 
-        // 4. Save Payment AND Outbox Event together in one Transaction
         const newRemainingBalance = remainingBalance - validatedData.amount;
 
         const result = await prisma.$transaction(async (tx) => {
-
-            // A. Save the payment
             const payment = await tx.payment.create({
                 data: {
                     enrollmentId: enrollmentId,
                     amount: validatedData.amount,
                     paymentMode: validatedData.paymentMode,
                     note: validatedData.note,
-                    recordedBy: req.user.userId // Admin who is logged in
+                    recordedBy: req.user.userId
                 }
             });
 
-            // B. Save the notification event for the background worker
-            const outboxEvent = await tx.notificationOutbox.create({
+            await tx.notificationOutbox.create({
                 data: {
                     eventType: 'PAYMENT_RECORDED',
                     payload: {
@@ -68,6 +57,11 @@ export const recordPayment = async (req, res) => {
             return payment;
         });
 
+        // 🔴 REDIS INVALIDATION: Purana dashboard cache hata do
+        const cacheKey = `dashboard:${enrollment.userId}`;
+        await redisPublisher.del(cacheKey);
+        console.log(`🗑️ Dashboard Cache Deleted for User: ${enrollment.userId}`);
+
         return res.status(201).json({
             success: true,
             message: 'Payment recorded successfully!',
@@ -79,9 +73,7 @@ export const recordPayment = async (req, res) => {
         });
 
     } catch (error) {
-        if (error.errors) {
-            return res.status(400).json({ success: false, error: error.errors[0].message });
-        }
+        if (error.errors) return res.status(400).json({ success: false, error: error.errors[0].message });
         return res.status(500).json({ success: false, error: 'Payment failed: ' + error.message });
     }
 };

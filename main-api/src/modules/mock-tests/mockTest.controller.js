@@ -1,7 +1,8 @@
 import { prisma } from '../../config/db.js';
 import { createTestSchema, bulkResultsSchema } from './mockTest.validation.js';
+import { redisPublisher } from '../../config/redis.js';
 
-// 1. Naya Test Create Karna
+// 1. Create Mock Test
 export const createMockTest = async (req, res) => {
     try {
         const validatedData = createTestSchema.parse(req.body);
@@ -22,12 +23,11 @@ export const createMockTest = async (req, res) => {
     }
 };
 
-// 2. Course ke saare enrolled students lana (taaki UI me table dikh sake)
+// 2. Get Students for Test (For Admin UI Table)
 export const getStudentsForTest = async (req, res) => {
     try {
         const { courseId } = req.params;
 
-        // Unhi students ko lao jinka account APPROVED hai
         const enrollments = await prisma.enrollment.findMany({
             where: {
                 courseId: courseId,
@@ -47,16 +47,14 @@ export const getStudentsForTest = async (req, res) => {
     }
 };
 
-// 3. Bulk Marks Entry (Ek sath saare students ke marks save karna)
+// 3. Bulk Marks Entry & Redis Cache Invalidation
 export const enterBulkResults = async (req, res) => {
     try {
         const testId = req.params.testId;
         const validatedData = bulkResultsSchema.parse(req.body);
 
-        // Prisma Transaction loop: Har student ka result insert ya update karega
         const results = await prisma.$transaction(
             validatedData.results.map((result) => {
-                // Upsert = Agar pehle se entry hai to update karo, nahi to nayi create karo
                 return prisma.mockTestResult.upsert({
                     where: {
                         mockTestId_enrollmentId: {
@@ -77,6 +75,28 @@ export const enterBulkResults = async (req, res) => {
                 });
             })
         );
+
+        // 🔴 REDIS INVALIDATION START
+
+        // A. Leaderboard cache delete karo
+        const testInfo = await prisma.mockTest.findUnique({ where: { id: testId } });
+        if (testInfo) {
+            await redisPublisher.del(`leaderboard:${testInfo.courseId}`);
+            console.log(`🗑️ Leaderboard Cache Deleted for Course: ${testInfo.courseId}`);
+        }
+
+        // B. Jin students ke marks dale gaye hain, unka Dashboard cache delete karo
+        const updatedEnrollments = await prisma.enrollment.findMany({
+            where: { id: { in: validatedData.results.map(r => r.enrollmentId) } },
+            select: { userId: true }
+        });
+
+        for (const en of updatedEnrollments) {
+            await redisPublisher.del(`dashboard:${en.userId}`);
+            console.log(`🗑️ Dashboard Cache Deleted for User: ${en.userId}`);
+        }
+
+        // 🔴 REDIS INVALIDATION END
 
         return res.status(200).json({
             success: true,
